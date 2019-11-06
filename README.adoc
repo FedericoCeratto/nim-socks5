@@ -1,0 +1,20 @@
+=== Nim Socks5 library
+
+image:https://img.shields.io/badge/status-beta-alpha.svg[badge]
+image:https://img.shields.io/github/tag/FedericoCeratto/nim-socks5.svg[tags]
+image:https://img.shields.io/badge/License-MPL%20v2-blue.svg[License]
+
+Implement Socks5 client and server with and without authentication.
+
+==== Installation
+
+[source,bash]
+----
+nimble install socks5
+----
+
+==== Usage
+
+See the package nim doc
+
+There is also a server demo at the bottom of socks5.nim
