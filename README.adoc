@@ -1,6 +1,6 @@
 === Nim Socks5 library
 
-image:https://img.shields.io/badge/status-beta-alpha.svg[badge]
+image:https://img.shields.io/badge/status-alpha-orange.svg[badge]
 image:https://img.shields.io/github/tag/FedericoCeratto/nim-socks5.svg[tags]
 image:https://img.shields.io/badge/License-MPL%20v2-blue.svg[License]
 
@@ -17,4 +17,20 @@ nimble install socks5
 
 See the package nim doc
 
-There is also a server demo at the bottom of socks5.nim
+[source,bash]
+----
+nim doc socks5.nim
+----
+
+There are also a server and client demo at the bottom of socks5.nim
+
+[source,bash]
+----
+nim c --hints:off -d:demoserver -o:server -r socks5.nim
+----
+
+.and:
+[source,bash]
+----
+nim c --hints:off -d:democlient -o:client -r socks5.nim
+----

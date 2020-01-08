@@ -68,13 +68,13 @@ proc recv1int(s: AsyncSocket): Future[int] {.async.} =
   return b[0].uint8.int
 
 
-proc receive_initial_negotiation*(client: AsyncSocket): Future[seq[Socks5AuthMethod]] {.async.} =
+proc receive_initial_negotiation*(client: AsyncSocket): Future[seq[
+    Socks5AuthMethod]] {.async.} =
   ## Server: receive initial negotiation request
   ## Returns a sequence of accepted authentication methods
-  echo "receive_initial_negotiation"
   let ver = await client.recv1()
   if ver != SOCKS_ver:
-    raise newException(Socks5VersionError,  "Unsupported SOCKS version")
+    raise newException(Socks5VersionError, "Unsupported SOCKS version")
 
   let nmethods = (await client.recv(1))[0].int
   let methods = await client.recv(nmethods)
@@ -84,14 +84,14 @@ proc receive_initial_negotiation*(client: AsyncSocket): Future[seq[Socks5AuthMet
 
 proc receive_username_password*(s: AsyncSocket): Future[(string, string)] {.async.} =
   ## Receive (username, password) from client
-  ## +----+------+----------+------+----------+
-  ## |VER | ULEN |  UNAME   | PLEN |  PASSWD  |
-  ## +----+------+----------+------+----------+
-  ## | 1  |  1   | 1 to 255 |  1   | 1 to 255 |
-  ## +----+------+----------+------+----------+
+  # +----+------+----------+------+----------+
+  # |VER | ULEN |  UNAME   | PLEN |  PASSWD  |
+  # +----+------+----------+------+----------+
+  # | 1  |  1   | 1 to 255 |  1   | 1 to 255 |
+  # +----+------+----------+------+----------+
   let ver = await s.recv1()
   if ver != '\1':
-    raise newException(Socks5VersionError,  "Unsupported Auth version")
+    raise newException(Socks5VersionError, "Unsupported Auth version")
   let ulen = await s.recv1int()
   let username = await s.recv(ulen)
   let plen = await s.recv1int()
@@ -111,18 +111,18 @@ proc parse_port(bytes: string): Port =
 
 proc parse_request*(s: AsyncSocket): Future[Socks5Request] {.async.} =
   ## Server: Parse SOCKS5 request
-  ## +----+-----+-------+------+----------+----------+
-  ## |VER | CMD |  RSV  | ATYP | DST.ADDR | DST.PORT |
-  ## +----+-----+-------+------+----------+----------+
-  ## | 1  |  1  | X'00' |  1   | Variable |    2     |
-  ## +----+-----+-------+------+----------+----------+
+  # +----+-----+-------+------+----------+----------+
+  # |VER | CMD |  RSV  | ATYP | DST.ADDR | DST.PORT |
+  # +----+-----+-------+------+----------+----------+
+  # | 1  |  1  | X'00' |  1   | Variable |    2     |
+  # +----+-----+-------+------+----------+----------+
   ## Either the fqdn or ipaddress field is set in the return value.
   ## For convenience, the address field (string) is always set
   if (await s.recv1) != SOCKS_ver:
-    raise newException(Socks5VersionError,  "Unsupported SOCKS version")
+    raise newException(Socks5VersionError, "Unsupported SOCKS version")
 
   result.cmd = Socks5RequestCommand(await s.recv1int)
-  discard await s.recv1int  # RSV
+  discard await s.recv1int # RSV
   result.address_type = Socks5AddressType(await s.recv1int)
   case result.address_type
   of Socks5AddressType.IPv4:
@@ -147,13 +147,14 @@ proc parse_request*(s: AsyncSocket): Future[Socks5Request] {.async.} =
   result.port = parse_port(await s.recv(2))
 
 
-proc send_reply*(s: AsyncSocket, address_type: Socks5AddressType, server_ipaddr: IpAddress, server_port: Port) {.async.} =
+proc send_reply*(s: AsyncSocket, address_type: Socks5AddressType,
+    server_ipaddr: IpAddress, server_port: Port) {.async.} =
   ## Server: Send reply
-  ## +----+-----+-------+------+----------+----------+
-  ## |VER | REP |  RSV  | ATYP | BND.ADDR | BND.PORT |
-  ## +----+-----+-------+------+----------+----------+
-  ## | 1  |  1  | X'00' |  1   | Variable |    2     |
-  ## +----+-----+-------+------+----------+----------+
+  # +----+-----+-------+------+----------+----------+
+  # |VER | REP |  RSV  | ATYP | BND.ADDR | BND.PORT |
+  # +----+-----+-------+------+----------+----------+
+  # | 1  |  1  | X'00' |  1   | Variable |    2     |
+  # +----+-----+-------+------+----------+----------+
   var reply = repeat('\x00', 256 + 6)
   # version
   reply[0] = SOCKS_ver
@@ -183,7 +184,8 @@ proc send_reply*(s: AsyncSocket, address_type: Socks5AddressType, server_ipaddr:
 #   discard
 
 
-proc socks5_request*(listener: AsyncSocket): Future[(AsyncSocket, Socks5Request)] {.async.} =
+proc socks5_request*(listener: AsyncSocket): Future[(AsyncSocket,
+    Socks5Request)] {.async.} =
   ## Wait for an incoming connection, handle it without authentication
   let client = await listener.accept()
   let auth_methods = await receive_initial_negotiation(client)
@@ -196,7 +198,7 @@ proc socks5_request*(listener: AsyncSocket): Future[(AsyncSocket, Socks5Request)
 
 proc socks5_request_user_pass*(
     listener: AsyncSocket,
-    upc:proc (u,p: string): bool,
+    upc: proc (u, p: string): bool,
   ): Future[(AsyncSocket, Socks5Request)] {.async.} =
   ## Wait for an incoming connection, handle it with using username/password auth
   ## The upc proc is a callback to verify the credentials and return
@@ -217,14 +219,61 @@ proc socks5_request_user_pass*(
   let request = await parse_request(client)
   return (client, request)
 
+# # SOCKS client # #
+
+from net import Socket, newSocket, MaxLineLength, connect, send, recv, recvLine, close
+
+type ProxySocket = ref object of RootObj
+  inner*: Socket
+
+proc newProxySocket*(ipaddr: string, port: Port): ProxySocket =
+  ## Create a new proxied TCP client socket
+  ## `ipaddr` and `port` refer to the proxy. The target address and port are set in `connect`
+  new result
+  result.inner = newSocket()
+  result.inner.connect(ipaddr, port)
+  result.inner.send("\x05\x01\x00") # connect with no auth
+  let resp = result.inner.recv(2, 1000)
+  if resp != "\x05\x00":
+    raise newException(Exception, "Unexpected proxy response: " & resp.toHex())
+
+proc newProxySocket*(ipaddr: IpAddress, port: Port): ProxySocket =
+  ## Create a new proxied TCP client socket
+  ## `ipaddr` and `port` refer to the proxy. The target address and port are set in `connect`
+  newProxySocket($ipaddr, port)
+
+
+proc connect*(s: ProxySocket, address: string, port: Port) =
+  ## Connect by FQDN/hostname or IP address
+  var p = "  "
+  p[0] = cast[char](port.uint16 shr 8)
+  p[1] = cast[char](port)
+
+  s.inner.send("\x05\x01\x00\x03" & address.len.char & address & p)
+
+proc send*(s: ProxySocket; data: string; flags = {SafeDisconn}) =
+  ## Sends data to a socket
+  s.inner.send(data, flags)
+
+proc recv*(s: ProxySocket; size: int; timeout = -1; flags = {
+    SafeDisconn}): string =
+  s.inner.recv(size, timeout, flags)
+
+proc recvLine*(s: ProxySocket; timeout = -1; flags = {SafeDisconn};
+    maxLength = MaxLineLength): TaintedString =
+  s.inner.recvLine(timeout, flags, maxLength)
+
+proc close*(s: ProxySocket) =
+  ## Close socket
+  s.inner.close()
 
 # Demo server
 
-when defined(demo):
+when defined(demoserver):
 
   proc setup_listener*(port: Port): AsyncSocket =
     ### Setup TCP listener
-    result = newAsyncSocket(buffered=false)
+    result = newAsyncSocket(buffered = false)
     result.setSockOpt(OptReuseAddr, true)
     result.bindAddr(port)
     result.listen()
@@ -239,7 +288,10 @@ when defined(demo):
       if src.isClosed():
         break
       let data = await src.recv(4096)
-      if data == "" or dst.isClosed():
+      if data == "":
+        break
+      echo "forwarding ", $data.len, " bytes"
+      if dst.isClosed():
         break
       await dst.send(data)
 
@@ -258,6 +310,7 @@ when defined(demo):
         echo "connecting to ", request.address
         let uplink = newAsyncSocket()
         await uplink.connect(request.address, request.port)
+        echo "connected"
         # end
 
         await client.send_reply(request.address_type, server_ipaddr, server_port)
@@ -289,9 +342,21 @@ when defined(demo):
         echo getCurrentExceptionMsg()
 
   proc main() =
-    asyncCheck demo_server(port=9876.Port)
-    asyncCheck demo_server_user_pass(port=9877.Port)
+    asyncCheck demo_server(port = 9876.Port)
+    asyncCheck demo_server_user_pass(port = 9877.Port)
     runForever()
+
+  if isMainModule:
+    main()
+
+when defined(democlient):
+
+  proc main() =
+    let s = newProxySocket("127.0.0.1", 9876.Port)
+    s.connect("nim-lang.org", 443.Port)
+    s.send("GET / HTTP/1.1..Host: nim-lang.org\n")
+    echo s.recv(9999, 1000)
+    s.close()
 
   if isMainModule:
     main()
